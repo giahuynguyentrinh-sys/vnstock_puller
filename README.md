@@ -7,7 +7,7 @@ A personal Python project for tracking and analyzing the Vietnam stock market.
 > Status: under development (v1.0 in progress). This is a learning project.
 
 ## Planned features (v1.0)
-- Fetch historical price data with `vnstock` and store it in SQLite
+- Pull API straight from web.
 - Analytics: daily returns, volatility, moving averages (MA), RSI using pandas and NumPy
 - Charts and a simple Streamlit dashboard
 - Small portfolio tracker
