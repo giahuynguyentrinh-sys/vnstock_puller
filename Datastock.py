@@ -9,6 +9,9 @@ from symbol_list import symbols
 import matplotlib.dates as mdates
 import yfinance as yf
 import time
+import json
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 200)
 URL = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/stocks/{symbol}/data_day"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 session = requests.Session()
@@ -44,6 +47,8 @@ def time_datetime(df):
     df["t"] = pd.to_datetime(df["t"])
     return df.sort_values("t").reset_index(drop=True)
 
+#savesqlite 
+
 def sqlitesave(all_df):
     with sqlite3.connect("stock.db") as f:
         all_df.to_sql("prices", f, if_exists="replace", index = True)
@@ -51,6 +56,11 @@ def sqlitesave(all_df):
 def save_shares(df, table = "shares"):
     with sqlite3.connect("stock.db") as f:
         df.to_sql(table, f, if_exists = "replace", index = False)
+        
+def save_toptrade(df, table = "top100tradeindays"):
+    pass
+            
+    
 def calc_daily_returns(df: pd.DataFrame) -> pd.Series:
     return df.groupby("symbol")["c"].pct_change()
 
@@ -116,5 +126,24 @@ def cal_market_cap():
         return result
     finally:
         con.close()                    
-x= cal_market_cap()
+
+def topforeigntrade(n): #limit = 100
+    url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/foreignTotal"
+    r = requests.get(url, params = {"top": n}, headers = {"User-Agent": "Mozilla/5.0"}, timeout = 10)
+    r.raise_for_status()
+    df = pd.DataFrame(r.json())
+    return df[["SB","FB", "FS", "FT"]]
+    
+    
+def topntrade(n): #limit = 100
+    url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/volume"
+    r = requests.get(url, params = {"which": 1, "top": n}, headers = {"User-Agent": "Mozilla/5.0"}, timeout = 10)
+    r.raise_for_status()
+    df = pd.DataFrame(r.json())
+    return df[[]]
+
+
+x = topforeigntrade(10)
+
 print(x)
+    
