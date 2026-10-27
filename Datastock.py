@@ -12,14 +12,18 @@ from datetime import date, time
 import json
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
+import pandas as pd
+
+
+indexs = ["VNINDEX","VN30", "VN100", "UPCOMINDEX", "HNX30", "HNXINDEX"]
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 200)
-URL = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/stocks/{symbol}/data_day"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 session = requests.Session()
 session.headers.update(HEADERS)
 
 def get_kbs(symbol, sdate, edate):
+    URL = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/stocks/{symbol}/data_day"
     r = session.get(URL.format(symbol=symbol),
                     params={"sdate": sdate, "edate": edate}, timeout=15)
     r.raise_for_status()
@@ -136,18 +140,15 @@ def get_year_totalshares(symbol,year):
     except Exception as e:
         print(f"{symbol} error: {type(e).__name__}: {e}")
         return None
-def get_all_totalshares(symbols, workers=8):
-    shares = []
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        results = ex.map(get_year_totalshares, symbols)
-        for r in tqdm(results, total=len(symbols)):
-            shares.append(r)
-    df = pd.DataFrame({"symbol": symbols, "total_shares": shares})
-    return df                    
+def get_all_totalshares(symbols, year, workers=8):
+       with ThreadPoolExecutor(max_workers=workers) as ex:
+           results = ex.map(lambda s: get_year_totalshares(s, year), symbols)
+           shares = list(tqdm(results, total=len(symbols)))
+       return pd.DataFrame({"symbol": symbols, "total_shares": shares})
 
 def topforeigntrade(n): #limit = 100 #update daily
     url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/foreignTotal"
-    r = requests.get(url, params = {"top": n}, headers = {"User-Agent": "Mozilla/5.0"}, timeout = 10)
+    r = requests.get(url, params = {"top": n}, headers = HEADERS, timeout = 10)
     r.raise_for_status()
     df = pd.DataFrame(r.json())
     df["date"] = date.today().isoformat()
@@ -157,7 +158,7 @@ def topforeigntrade(n): #limit = 100 #update daily
     
 def topntrade(n): #limit = 100
     url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/volume"
-    r = requests.get(url, params = {"which": 1, "top": n}, headers = {"User-Agent": "Mozilla/5.0"}, timeout = 10)
+    r = requests.get(url, params = {"which": 1, "top": n}, headers = HEADERS, timeout = 10)
     r.raise_for_status()
     df = pd.DataFrame(r.json())
     df["date"] = date.today().isoformat()
@@ -167,3 +168,36 @@ def topntrade(n): #limit = 100
     })
     return df[["date", "symbol", "value", "original_value", "floor", "ceiling", "ref_price"]]
 
+def volume_ratio(symbol, n):
+    conn = sqlite3.connect("stock.db")
+    query = """
+    select v from data_2026
+    where symbol = ?
+    order by t desc
+    limit ?    
+    """
+    df = pd.read_sql_query(query, conn, params = (symbol, n+1))
+    conn.close()
+    if len(df) < n +1:
+        return None
+    newest = df["v"].iloc[0]
+    avg = df["v"].iloc[1:].mean()
+    return newest/avg * 100
+
+def get_index_info_day(index, sdate, edate):
+    url = f"https://kbbuddywts.kbsec.com.vn/iis-server/investment/index/{index}/data_day"
+    r = session.get(url, params={"sdate": sdate, "edate": edate}, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    df = pd.DataFrame(data["data_day"])
+    if df.empty:                                   # tên mã sai hoặc khoảng ngày không có dữ liệu
+        return df
+    for col in ["o", "h", "l", "c", "v"]:
+        df[col] = pd.to_numeric(df[col])           # dòng đầu là chuỗi, các dòng sau là số
+    df = time_datetime(df)                         # đổi t sang ngày, sắp tăng dần
+    df["t"] = df["t"].dt.normalize()               # bỏ đuôi 07:00
+    df["symbol"] = data["symbol"]
+    return df[["t", "symbol", "o", "h", "l", "c", "v"]]
+for index in indexs:
+    x = get_index_info_day(index, "26-10-2024", "26-10-2026")
+    save_sqlite(x, "index_prices")
