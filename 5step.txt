@@ -1,0 +1,47 @@
+1. Understand the problem before learning the solution
+Ask yourself:
+What am I trying to achieve?
+Why does this problem matter?
+What should the result look like?
+Example: Before learning ThreadPoolExecutor, understand why fetching 100 stocks one by one is slow. The problem is waiting for network responses, not a lack of Python syntax.
+2. Break the problem into smaller pieces
+A difficult problem is often several simpler problems connected together.
+Ask:
+What are the major components?
+What does each component do?
+What information passes between them?
+For your stock application, think: fetch data → clean data → store data → calculate indicators → display results.
+You don't need to master all of SQL before building your application. But you shouldn't permanently skip the concepts your code depends on.
+Learn the prerequisites, not every detail
+Identify the concepts you need to understand the next step.
+For example, before understanding a complicated SQL query, learn:
+SELECT and WHERE.
+How JOIN combines tables.
+How GROUP BY works.
+Subqueries.
+How to find the latest record for each group.
+You don't need to master all of SQL before building your application. But you shouldn't permanently skip the concepts your code depends on.
+4. Attempt it yourself before asking for help
+This is where you develop independent reasoning.
+Spend 10–20 minutes trying to:
+Write down your proposed solution.
+Sketch pseudocode.
+Identify what you don't understand.
+Find one specific obstacle.
+If you get stuck, use AI or documentation. The goal isn't to struggle pointlessly; it's to make your own attempt before receiving the solution.
+5.Build, test, and investigate failures
+Reading an explanation creates familiarity. Testing creates evidence that you understand it.
+Use small examples with predictable results. Test normal inputs, empty inputs, invalid inputs, and unexpected ordering.
+When something fails, don't immediately replace the entire solution with AI's version. First ask: What did I expect, what actually happened, and where did the two diverge?
+6.Explain it in your own words
+After learning something, close the tutorial and explain:
+What problem does it solve?
+How does it work at a high level?
+What assumptions does it make?
+When would it fail?
+Why did you choose it over an alternative?
+If you can explain the purpose but not every implementation detail, that's still progress. Mark the gaps and revisit them when they matter.
+7.Rebuild or solve a variation without following the original
+This is the test most people skip.
+Change the requirements slightly and try again. Build a simpler version from memory, solve a similar problem, or debug a deliberately broken example.
+If you can only reproduce the solution while looking at it, you haven't fully internalized it yet. If you can adapt the underlying idea to a new problem, you're building transferable skill.
