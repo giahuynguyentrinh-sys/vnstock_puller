@@ -58,28 +58,78 @@ def to_datetime(df):
 
 #savesqlite 
 
-def save_sqlite(df, table = "shares"):
-    with sqlite3.connect("stock.db") as f:
-        df.to_sql(table, f, if_exists = "replace", index = False)
-def append_sqlite(df, table):
-    with sqlite3.connect("stock.db") as f:
-        df.to_sql(table, f, if_exists = "append", index = False)
+def save_append(df, table, keys=("symbol", "t")):
+    # Bước 1: không có dữ liệu thì thoát
+    if df is None:
+        return 0
+    if df.empty:
+        return 0
 
-        
-def find_missing(symbol,table,sdate,edate):
-    today = date.today()
-    with sqlite3.connect("stock.db") as conn:
-        query = f"""
-        select  from {table}
-        order by t asc
-        where symbol = ?
-        """
-        df = pd.read_sql_query(query, conn, params = (symbol,))
-        if df.empty():
-            return [(sdate,edate)]
-    start = pd.to_datetime(df["t"].iloc[0])    
-    end = date.today()
-    pass         
+    # Bước 2: kiểm tra df có đủ cột khóa
+    for k in keys:
+        if k not in df.columns:
+            raise ValueError(f"{table}: df thiếu cột {k}")
+
+    df = df.copy()
+
+    # Bước 3: tạo cột "_key" cho df, ví dụ "VNM|2026-10-29 00:00:00"
+    key = None
+    for k in keys:
+        if pd.api.types.is_datetime64_any_dtype(df[k]):
+            part = df[k].dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            part = df[k].astype(str)
+        if key is None:
+            key = part
+        else:
+            key = key + "|" + part
+    df["_key"] = key
+
+    conn = sqlite3.connect("stock.db")
+    try:
+        # Bước 4: bảng chưa tồn tại thì ghi luôn
+        co_bang = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,)
+        ).fetchone()
+        if co_bang is None:
+            df = df.drop_duplicates(subset="_key")
+            df = df.drop(columns=["_key"])
+            df.to_sql(table, conn, if_exists="append", index=False)
+            return len(df)
+
+        # Bước 5: đọc các khóa đã có trong DB
+        col_list = ""
+        for i in range(len(keys)):
+            if i > 0:
+                col_list = col_list + ", "
+            col_list = col_list + '"' + keys[i] + '"'
+        old = pd.read_sql_query(f'SELECT {col_list} FROM "{table}"', conn)
+
+        # Bước 6: tạo "_key" cho dữ liệu cũ theo đúng cách trên
+        old_key = None
+        for k in keys:
+            part = old[k].astype(str)
+            if old_key is None:
+                old_key = part
+            else:
+                old_key = old_key + "|" + part
+
+        # Bước 7: bỏ dòng đã có trong DB, bỏ dòng trùng ngay trong df
+        da_co = df["_key"].isin(old_key)
+        moi = df[~da_co]
+        moi = moi.drop_duplicates(subset="_key")
+        moi = moi.drop(columns=["_key"])
+
+        # Bước 8: append phần mới
+        if moi.empty:
+            return 0
+        moi.to_sql(table, conn, if_exists="append", index=False)
+        return len(moi)
+    finally:
+        conn.close()
+    
+       
 
 def calc_daily_returns(df: pd.DataFrame) -> pd.Series:
     return df.groupby("symbol")["c"].pct_change()
@@ -187,7 +237,7 @@ def topntrade(n): #limit = 100
         "VAL": "value", "SB": "symbol", "date": "t", "ORIGINAL_VAL": "original_value",
     "CL": "ceiling", "FL": "floor", "RE": "ref_price" 
     })
-    return df[["date", "symbol", "value", "original_value", "floor", "ceiling", "ref_price"]]
+    return df[["t", "symbol", "value", "original_value", "floor", "ceiling", "ref_price"]]
 
 def volume_ratio(symbol, n):
     conn = sqlite3.connect("stock.db")
@@ -261,7 +311,8 @@ def auto_update_all_data(symbols, table):
                 continue
             if not x.empty:
                 x["symbol"] = symbol
-                append_sqlite(to_datetime(x), table)
+                save_append(to_datetime(x), table)
+                pass
 
 def auto_update_all_index_info(indexs, table):
     for index, ranges in findmissing_all(indexs, table).items():
@@ -273,5 +324,43 @@ def auto_update_all_index_info(indexs, table):
                     continue
                 if not x.empty:
                     x["symbol"] = index
-                    append_sqlite(to_datetime(x), table)
-    
+                    save_append(to_datetime(x), table)
+                    pass
+
+def EPS_puller(symbol):
+    url = f"""https://kbbuddywts.kbsec.com.vn/iis-server/investment/stockinfo/info/{symbol}?l=1"""
+    try:
+        r = session.get(url, headers = HEADERS, timeout = 10)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"{symbol} error: {e}")
+        return None
+    data = r.json()
+    num_cols = ["EPS", "BVPS", "ROE", "ROA", "DIV", "YD", "MC"]
+    text_cols = ["SB","FID"]
+    data = pd.DataFrame([data]).reindex(columns = text_cols + num_cols)
+    data[num_cols] = data[num_cols].apply(pd.to_numeric, errors="coerce")
+    data["t"] = pd.Timestamp.today().normalize()
+    return data[["t"] + text_cols + num_cols]
+
+def auto_update_EPS(table = "fundamentals"):
+    for symbol in symbols:
+        x = EPS_puller(symbol)
+        save_append(x, table, keys = ("SB", "FID"))
+import sqlite3
+
+with sqlite3.connect("stock.db") as conn:
+    # Bước 1: xem trước giá trị t hiện tại và kết quả sau khi chuẩn hóa
+    print(conn.execute("""
+        SELECT t, strftime('%Y-%m-%d 00:00:00', t) AS t_new
+        FROM top100_foreigntrade
+        LIMIT 5
+    """).fetchall())
+
+    # Bước 2: cập nhật trực tiếp
+    cur = conn.execute("""
+        UPDATE top100_foreigntrade
+        SET t = strftime('%Y-%m-%d 00:00:00', t)
+        WHERE strftime('%Y-%m-%d 00:00:00', t) IS NOT NULL
+    """)
+    print("Số dòng đã cập nhật:", cur.rowcount)
