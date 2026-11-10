@@ -137,17 +137,17 @@ def calc_ma(df,n): #đường trung bình động n phiên
     return df.groupby("symbol")["c"].transform(lambda s: s.rolling(n).mean())
 #transform tính trong từng nhóm, rồi trả về một chuỗi có cùng số dòng để dễ dàng
 #gán lại vào sqlite
-def cal_market_cap(sdate, edate):
+def cal_market_cap(sdate, edate, table1 = "all_data", table2 ="2025_totalshares"):
     sql_querry = f"""Select  p.symbol, 
                             p.t,
                             p.c as close_price,
                             p.c * s.total_shares as market_cap
-                    from prices as p
-                    join shares_2024 as s
+                    from {table1} as p
+                    join "{table2}" as s
                         on p.symbol == s.symbol
                     where p.t = (
                         select max(p2.t)
-                        from prices as p2
+                        from {table1} as p2
                         where p2.symbol = s.symbol
                         and p2.t >= ?
                         and p2.t < ?
@@ -164,7 +164,7 @@ def cal_market_cap(sdate, edate):
 def get_recent_prices(symbol, n=100):
     with sqlite3.connect("stock.db") as conn:
         query = """
-            SELECT t, symbol, c FROM data_2026
+            SELECT t, symbol, c FROM all_data
             WHERE symbol = ?
             ORDER BY t DESC
             LIMIT ?
@@ -184,7 +184,40 @@ def cal_macd(symbol, n= 100):
     df["signal"] = macd_indicator.macd_signal()
     df["Histogram"] = macd_indicator.macd_diff()
     return df
-    
+
+def cal_pe(symbol, table1 = "all_data", table2 = "fundamentals", fid = "12/2025"):
+    with sqlite3.connect("stock.db") as con:
+        query = f"""
+        Select  data.symbol, 
+                data.t,
+                data.c / funda.EPS  as pe
+        from {table1} as data
+        join {table2} as funda
+        on funda.SB = data.symbol 
+        where data.symbol = ? and funda.FID = ? AND funda.EPS > 0
+        order by data.t desc limit 1
+        """
+        df = pd.read_sql_query(query, con, params = (symbol,fid))
+        if df.empty:
+            return
+    return df[["t","FID","symbol","pe"]]
+
+def cal_pb(symbol,table1 ="all_data", table2 = "fundamentals", fid = "12/2025"):
+    with sqlite3.connect("stock.db") as con:
+            query = f"""
+            Select  data.symbol, 
+                    data.t,
+                    data.c / funda.BVPS  as pb
+            from {table1} as data
+            join {table2} as funda
+            on funda.SB = data.symbol 
+            where data.symbol = ? and funda.FID = ? AND funda.EPS > 0
+            order by data.t desc limit 1
+            """
+            df = pd.read_sql_query(query, con, params = (symbol,fid))
+            if df.empty:
+                return
+    return df[["t","FID","symbol","pb"]]
 #ve bieu do 
 def linechart_price(t,df,title,xlabel,ylabel):
     fig, ax = plt.subplots(figsize=(12, 5))
@@ -222,31 +255,33 @@ def topforeigntrade(n): #limit = 100 #update daily
     r = requests.get(url, params = {"top": n}, headers = HEADERS, timeout = 10)
     r.raise_for_status()
     df = pd.DataFrame(r.json())
-    df["date"] = pd.to_datetime(date.today())
+    df["t"] = pd.to_datetime(date.today())
     df = df.rename(columns= {
         "SB": "symbol", "FB": "foreign_buy", "FS": "foreign_sell", "FT": "foreign_total" })
-    return df[["date","symbol","foreign_buy", "foreign_sell", "foreign_total"]]
+    return df[["t","symbol","foreign_buy", "foreign_sell", "foreign_total"]]
     
 def topntrade(n): #limit = 100
     url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/volume"
     r = requests.get(url, params = {"which": 1, "top": n}, headers = HEADERS, timeout = 10)
     r.raise_for_status()
     df = pd.DataFrame(r.json())
-    df["date"] = pd.to_datetime(date.today())
+    df["t"] = pd.to_datetime(date.today())
     df = df.rename(columns = {
         "VAL": "value", "SB": "symbol", "date": "t", "ORIGINAL_VAL": "original_value",
     "CL": "ceiling", "FL": "floor", "RE": "ref_price" 
     })
+    df["value"] = pd.to_numeric(df["value"])
+    df["original_value"] = pd.to_numeric(df["original_value"])
     return df[["t", "symbol", "value", "original_value", "floor", "ceiling", "ref_price"]]
 
 def volume_ratio(symbol, n):
     conn = sqlite3.connect("stock.db")
     query = """
-    select v from data_2026
+    select t,symbol,v from all_data
     where symbol = ?
     order by t desc
     limit ?    
-    """
+    """ 
     df = pd.read_sql_query(query, conn, params = (symbol, n+1))
     df = to_datetime(df)
     conn.close()
@@ -306,26 +341,21 @@ def auto_update_all_data(symbols, table):
         for s, e in ranges:
             try:
                 x = get_kbs(symbol, s.strftime("%d-%m-%Y"), e.strftime("%d-%m-%Y"))
+                if not x.empty:
+                    x["symbol"] = symbol
+                    save_append(to_datetime(x), table)
             except Exception as E:
                 print(f"{symbol}: error {E}")
-                continue
-            if not x.empty:
-                x["symbol"] = symbol
-                save_append(to_datetime(x), table)
-                pass
-
 def auto_update_all_index_info(indexs, table):
     for index, ranges in findmissing_all(indexs, table).items():
             for s, e in ranges:
                 try:
                     x = get_index_info_day(index, s.strftime("%d-%m-%Y"), e.strftime("%d-%m-%Y"))
+                    if not x.empty:
+                        x["symbol"] = index
+                        save_append(to_datetime(x), table)
                 except Exception as E:
                     print(f"{index}: error {E}")
-                    continue
-                if not x.empty:
-                    x["symbol"] = index
-                    save_append(to_datetime(x), table)
-                    pass
 
 def EPS_puller(symbol):
     url = f"""https://kbbuddywts.kbsec.com.vn/iis-server/investment/stockinfo/info/{symbol}?l=1"""
@@ -347,20 +377,10 @@ def auto_update_EPS(table = "fundamentals"):
     for symbol in symbols:
         x = EPS_puller(symbol)
         save_append(x, table, keys = ("SB", "FID"))
-import sqlite3
+    
+def auto_update_top_stock():
+    x = topforeigntrade(100)
+    y = topntrade(100)
+    save_append(x, "top100_foreigntrade", keys = ("t", "symbol"))
+    save_append(y, "top100_trade", keys = ("t","symbol"))
 
-with sqlite3.connect("stock.db") as conn:
-    # Bước 1: xem trước giá trị t hiện tại và kết quả sau khi chuẩn hóa
-    print(conn.execute("""
-        SELECT t, strftime('%Y-%m-%d 00:00:00', t) AS t_new
-        FROM top100_foreigntrade
-        LIMIT 5
-    """).fetchall())
-
-    # Bước 2: cập nhật trực tiếp
-    cur = conn.execute("""
-        UPDATE top100_foreigntrade
-        SET t = strftime('%Y-%m-%d 00:00:00', t)
-        WHERE strftime('%Y-%m-%d 00:00:00', t) IS NOT NULL
-    """)
-    print("Số dòng đã cập nhật:", cur.rowcount)
