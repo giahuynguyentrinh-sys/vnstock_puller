@@ -9,11 +9,10 @@ from symbol_list import symbols
 import matplotlib.dates as mdates
 import yfinance as yf
 from datetime import date, time, timedelta
-import json
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 import pandas as pd
-start_date = date(2024,1,1)
+start_date = date(2018,1,1)
 indexs = ["VNINDEX","VN30", "VN100", "UPCOMINDEX", "HNX30"]
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 200)
@@ -129,15 +128,19 @@ def save_append(df, table, keys=("symbol", "t")):
     finally:
         conn.close()
     
-       
 
-def calc_daily_returns(df: pd.DataFrame) -> pd.Series:
-    return df.groupby("symbol")["c"].pct_change()
-def calc_ma(df,n): #đường trung bình động n phiên 
-    return df.groupby("symbol")["c"].transform(lambda s: s.rolling(n).mean())
+def calc_pct_daily(symbol, n =100):
+    df = get_recent_prices(symbol, n = 100)
+    df["pct"] = df["c"].pct_change()
+    return df
+def calc_ma(symbol,n =200, extra= 100): #đường trung bình động n phiên
+    df= get_recent_prices(symbol,n+extra)
+    df["ma"] =df["c"].rolling(n).mean()
+    return df
 #transform tính trong từng nhóm, rồi trả về một chuỗi có cùng số dòng để dễ dàng
 #gán lại vào sqlite
-def cal_market_cap(sdate, edate, table1 = "all_data", table2 ="2025_totalshares"):
+def cal_market_cap(sdate, edate, table1 = "all_data", table2 ="2025_totalshares"): #cái này chỉ pull dữ liệu từ năm 2025, thích
+#thì phải sử dụng table2 = "2024_totalshares"
     sql_querry = f"""Select  p.symbol, 
                             p.t,
                             p.c as close_price,
@@ -190,6 +193,7 @@ def cal_pe(symbol, table1 = "all_data", table2 = "fundamentals", fid = "12/2025"
         query = f"""
         Select  data.symbol, 
                 data.t,
+                funda.FID,
                 data.c / funda.EPS  as pe
         from {table1} as data
         join {table2} as funda
@@ -207,11 +211,12 @@ def cal_pb(symbol,table1 ="all_data", table2 = "fundamentals", fid = "12/2025"):
             query = f"""
             Select  data.symbol, 
                     data.t,
+                    funda.FID
                     data.c / funda.BVPS  as pb
             from {table1} as data
             join {table2} as funda
             on funda.SB = data.symbol 
-            where data.symbol = ? and funda.FID = ? AND funda.EPS > 0
+            where data.symbol = ? and funda.FID = ? and funda.BVPS > 0
             order by data.t desc limit 1
             """
             df = pd.read_sql_query(query, con, params = (symbol,fid))
@@ -249,6 +254,43 @@ def get_all_totalshares(symbols, year, workers=8):
            results = ex.map(lambda s: get_year_totalshares(s, year), symbols)
            shares = list(tqdm(results, total=len(symbols)))
        return pd.DataFrame({"symbol": symbols, "total_shares": shares})
+    
+def top_losers(n):#limit(n= 181)
+    now = pd.Timestamp.today().normalize()
+    with sqlite3.connect("stock.db") as conn:
+        query = f""" WITH latest_dates AS (
+    SELECT DISTINCT t
+    FROM all_data
+    WHERE t <= ?
+    ORDER BY t DESC
+    LIMIT 2
+)
+SELECT t, symbol, c
+FROM all_data
+WHERE t IN (SELECT t FROM latest_dates)
+ORDER BY t ASC, symbol ASC;
+        """
+        df = pd.read_sql_query(query, conn, params = (now,))
+    df.pivot(index = "symbol", columns = "t", values = "c")
+    dates = sorted(df["t"].unique())
+    if len(dates) < 2:
+        return
+    pivot = df.pivot(index = "symbol", columns = "t", values = "c")
+    pivot = pivot.dropna(subset = dates)
+    pivot = pivot[(pivot[dates[0]] > 0) & (pivot[dates[1]]>0)]
+    pivot["change_pct"] = (
+        (pivot[dates[1]] - pivot[dates[0]])
+        / pivot[dates[0]]
+    ) * 100
+    top_gainers = pivot.sort_values(
+        "change_pct", ascending=False
+    ).head(n)
+
+    top_losers = pivot.sort_values(
+        "change_pct", ascending=True
+    ).head(n)
+
+    return top_gainers, top_losers
 
 def topforeigntrade(n): #limit = 100 #update daily
     url = "https://kbbuddywts.kbsec.com.vn/iis-server/investment/rtranking/foreignTotal"
@@ -372,15 +414,15 @@ def EPS_puller(symbol):
     data[num_cols] = data[num_cols].apply(pd.to_numeric, errors="coerce")
     data["t"] = pd.Timestamp.today().normalize()
     return data[["t"] + text_cols + num_cols]
-
 def auto_update_EPS(table = "fundamentals"):
     for symbol in symbols:
         x = EPS_puller(symbol)
         save_append(x, table, keys = ("SB", "FID"))
-    
+
 def auto_update_top_stock():
     x = topforeigntrade(100)
     y = topntrade(100)
     save_append(x, "top100_foreigntrade", keys = ("t", "symbol"))
     save_append(y, "top100_trade", keys = ("t","symbol"))
 
+auto_update_all_data(symbols, table= "all_data")

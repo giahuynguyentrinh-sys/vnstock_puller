@@ -26,4 +26,3 @@ symbols = [
            'VPI', 'VRE', 'VSC', 'VSH', 'YEG', 'VIC', 'VHM',
            'VJC', 'VIB', 'DGC', 'DGW', 'NKG', 'VHC'
 ]
-
