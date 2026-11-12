@@ -127,19 +127,31 @@ def save_append(df, table, keys=("symbol", "t")):
         return len(moi)
     finally:
         conn.close()
-    
+        
+def sqlite_append(df, table):
+    if df is None or df.empty:
+        return 0
+    conn = sqlite3.connect("stock.db")
+    try:
+        df.to_sql(table, conn, if_exists="append", index=False)
+        return len(df)
+    finally:
+        conn.close()
+            
 
 def calc_pct_daily(symbol, n =100):
     df = get_recent_prices(symbol, n = 100)
     df["pct"] = df["c"].pct_change()
     return df
+
 def calc_ma(symbol,n =200, extra= 100): #đường trung bình động n phiên
     df= get_recent_prices(symbol,n+extra)
     df["ma"] =df["c"].rolling(n).mean()
     return df
+
 #transform tính trong từng nhóm, rồi trả về một chuỗi có cùng số dòng để dễ dàng
 #gán lại vào sqlite
-def cal_market_cap(sdate, edate, table1 = "all_data", table2 ="2025_totalshares"): #cái này chỉ pull dữ liệu từ năm 2025, thích
+def cal_market_cap(sdate, edate, table1 = "all_data", table2 ="total_shares_2025"): #cái này chỉ pull dữ liệu từ năm 2025, thích
 #thì phải sử dụng table2 = "2024_totalshares"
     sql_querry = f"""Select  p.symbol, 
                             p.t,
@@ -238,23 +250,51 @@ def linechart_price(t,df,title,xlabel,ylabel):
     plt.show()
 #end ve bieu do
 #laythongtintuyahoo
-def get_year_totalshares(symbol,year):
+def get_symbol_shares_range(symbol, start_year, end_year):
+    """Trả về list các (symbol, t, shares) cho mọi cột nằm trong [start_year, end_year]."""
     try:
         bs = yf.Ticker(f"{symbol}.VN").balance_sheet
-        col = [c for c in bs.columns if c.year == year]
-        if not col:
-            print(f"{symbol}: không có cột {year}, cột hiện có: {[str(c.date()) for c in bs.columns]}")
-            return None
-        return bs.loc["Common Stock", col[0]] / 10000
+        if bs is None or bs.empty:
+            print(f"{symbol}: balance_sheet rỗng")
+            return []
+
+        rows = []
+        for col in bs.columns:
+            ts = pd.Timestamp(col)
+            if not (start_year <= ts.year <= end_year):
+                continue
+            for row, divisor in [
+                ("Ordinary Shares Number", 1),
+                ("Share Issued", 1),
+                ("Common Stock", 10000),
+            ]:
+                if row in bs.index:
+                    v = bs.loc[row, col]
+                    if pd.notna(v) and v != 0:
+                        rows.append((symbol, ts.tz_localize(None).normalize(), v / divisor))
+                        break
+        return rows
+
     except Exception as e:
         print(f"{symbol} error: {type(e).__name__}: {e}")
-        return None
-def get_all_totalshares(symbols, year, workers=8):
-       with ThreadPoolExecutor(max_workers=workers) as ex:
-           results = ex.map(lambda s: get_year_totalshares(s, year), symbols)
-           shares = list(tqdm(results, total=len(symbols)))
-       return pd.DataFrame({"symbol": symbols, "total_shares": shares})
-    
+        return []
+
+
+def get_all_totalshares_range(symbols, start_year=2021, end_year=2025, workers=8, table="totalshares"):
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        results = ex.map(
+            lambda s: get_symbol_shares_range(s, start_year, end_year), symbols
+        )
+        results = list(tqdm(results, total=len(symbols)))
+
+    flat = [r for sub in results for r in sub]
+    df = pd.DataFrame(flat, columns=["symbol", "t", "total_shares"])
+    df["t"] = pd.to_datetime(df["t"])
+
+    n = save_append(df, table, keys=("symbol", "t"))
+    print(f"Thêm {n} dòng mới vào bảng {table}")
+    return n
+get_all_totalshares_range(symbols, start_year=2021, end_year=2025, workers=8, table="totalshares")
 def top_losers(n):#limit(n= 181)
     now = pd.Timestamp.today().normalize()
     with sqlite3.connect("stock.db") as conn:
@@ -332,6 +372,7 @@ def volume_ratio(symbol, n):
     newest = df["v"].iloc[0]
     avg = df["v"].iloc[1:].mean()
     return newest/avg * 100
+
 
 def get_index_info_day(index, sdate, edate): #update_daily #append
     url = f"https://kbbuddywts.kbsec.com.vn/iis-server/investment/index/{index}/data_day"
@@ -424,5 +465,3 @@ def auto_update_top_stock():
     y = topntrade(100)
     save_append(x, "top100_foreigntrade", keys = ("t", "symbol"))
     save_append(y, "top100_trade", keys = ("t","symbol"))
-
-auto_update_all_data(symbols, table= "all_data")
