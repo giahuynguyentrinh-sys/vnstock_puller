@@ -11,6 +11,7 @@ import yfinance as yf
 from datetime import date, time, timedelta
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
+from ta.volatility import AverageTrueRange
 import pandas as pd
 start_date = date(2018,1,1)
 indexs = ["VNINDEX","VN30", "VN100", "UPCOMINDEX", "HNX30"]
@@ -139,10 +140,6 @@ def sqlite_append(df, table):
         conn.close()
             
 
-def calc_pct_daily(symbol, n =100):
-    df = get_recent_prices(symbol, n = 100)
-    df["pct"] = df["c"].pct_change()
-    return df
 
 def calc_ma(symbol,n =200, extra= 100): #đường trung bình động n phiên
     df= get_recent_prices(symbol,n+extra)
@@ -185,6 +182,18 @@ def get_recent_prices(symbol, n=100):
             LIMIT ?
         """
         df = pd.read_sql_query(query, conn, params=(symbol, n))
+    df = to_datetime(df)
+    return df.sort_values("t")
+
+def get_recent_hlc(symbol, n =100):
+    with sqlite3.connect("stock.db") as conn:
+            query = """
+                SELECT t, symbol,h,l,c FROM all_data
+                WHERE symbol = ?
+                ORDER BY t DESC
+                LIMIT ?
+            """
+            df = pd.read_sql_query(query, conn, params=(symbol, n))
     df = to_datetime(df)
     return df.sort_values("t")
 
@@ -294,7 +303,6 @@ def get_all_totalshares_range(symbols, start_year=2021, end_year=2025, workers=8
     n = save_append(df, table, keys=("symbol", "t"))
     print(f"Thêm {n} dòng mới vào bảng {table}")
     return n
-get_all_totalshares_range(symbols, start_year=2021, end_year=2025, workers=8, table="totalshares")
 def top_losers(n):#limit(n= 181)
     now = pd.Timestamp.today().normalize()
     with sqlite3.connect("stock.db") as conn:
@@ -465,3 +473,4 @@ def auto_update_top_stock():
     y = topntrade(100)
     save_append(x, "top100_foreigntrade", keys = ("t", "symbol"))
     save_append(y, "top100_trade", keys = ("t","symbol"))
+    

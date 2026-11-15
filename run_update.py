@@ -1,7 +1,6 @@
 from datetime import datetime
 import traceback
 from Datastock import *
-print("loading")
 with open("log.txt", "a", encoding="utf-8") as f:
     f.write(f"{datetime.now()} bắt đầu\n")
     try:
