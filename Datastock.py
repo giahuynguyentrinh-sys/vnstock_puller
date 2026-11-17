@@ -10,7 +10,7 @@ import matplotlib.dates as mdates
 import yfinance as yf
 from datetime import date, time, timedelta
 from ta.momentum import RSIIndicator
-from ta.trend import MACD
+from ta.trend import MACD, ADXIndicator
 from ta.volatility import AverageTrueRange
 import pandas as pd
 start_date = date(2018,1,1)
@@ -140,7 +140,6 @@ def sqlite_append(df, table):
         conn.close()
             
 
-
 def calc_ma(symbol,n =200, extra= 100): #đường trung bình động n phiên
     df= get_recent_prices(symbol,n+extra)
     df["ma"] =df["c"].rolling(n).mean()
@@ -185,29 +184,6 @@ def get_recent_prices(symbol, n=100):
     df = to_datetime(df)
     return df.sort_values("t")
 
-def get_recent_hlc(symbol, n =100):
-    with sqlite3.connect("stock.db") as conn:
-            query = """
-                SELECT t, symbol,h,l,c FROM all_data
-                WHERE symbol = ?
-                ORDER BY t DESC
-                LIMIT ?
-            """
-            df = pd.read_sql_query(query, conn, params=(symbol, n))
-    df = to_datetime(df)
-    return df.sort_values("t")
-
-def calc_rsi(symbol, n =100):
-    df = get_recent_prices(symbol, n)
-    df["rsi"] = RSIIndicator(df["c"], window = 14).rsi()
-    return df
-def cal_macd(symbol, n= 100):
-    df = get_recent_prices(symbol, n)
-    macd_indicator = MACD(df["c"])
-    df["macd"] = macd_indicator.macd()
-    df["signal"] = macd_indicator.macd_signal()
-    df["Histogram"] = macd_indicator.macd_diff()
-    return df
 
 def cal_pe(symbol, table1 = "all_data", table2 = "fundamentals", fid = "12/2025"):
     with sqlite3.connect("stock.db") as con:
