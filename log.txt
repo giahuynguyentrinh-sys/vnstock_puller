@@ -15,3 +15,33 @@
 2026-11-15 13:31:46.062413 xong
 2026-11-16 09:11:40.359269 bắt đầu
 2026-11-16 09:12:14.578308 xong
+2026-11-17 14:52:34.902668 bắt đầu
+2026-11-17 14:55:16.136489 bắt đầu
+2026-11-17 14:55:32.438774 xong
+2026-11-17 15:21:54.651524 bắt đầu
+2026-11-17 15:22:10.949101 xong
+2026-11-17 16:03:09.606400 bắt đầu
+2026-11-17 16:04:26.587086 xong
+2026-11-19 08:14:17.745787 bắt đầu
+2026-11-19 08:17:50.462603 bắt đầu
+Traceback (most recent call last):
+  File "c:\python\vnstockpuller\run_update.py", line 10, in <module>
+    auto_update_top_stock()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\python\vnstockpuller\Datastock.py", line 448, in auto_update_top_stock
+    x = topforeigntrade(100)
+  File "c:\python\vnstockpuller\Datastock.py", line 327, in topforeigntrade
+    return df[["t","symbol","foreign_buy", "foreign_sell", "foreign_total"]]
+           ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\python\vnstockpuller\venv\Lib\site-packages\pandas\core\frame.py", line 4384, in __getitem__
+    indexer = self.columns._get_indexer_strict(key, "columns")[1]
+              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\python\vnstockpuller\venv\Lib\site-packages\pandas\core\indexes\base.py", line 6302, in _get_indexer_strict
+    self._raise_if_missing(keyarr, indexer, axis_name)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\python\vnstockpuller\venv\Lib\site-packages\pandas\core\indexes\base.py", line 6355, in _raise_if_missing
+    raise KeyError(f"{not_found} not in index")
+KeyError: "['symbol', 'foreign_buy', 'foreign_sell', 'foreign_total'] not in index"
+
+2026-11-19 08:22:17.781298 bắt đầu
+2026-11-19 08:22:49.683663 xong

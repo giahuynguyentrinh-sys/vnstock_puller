@@ -37,7 +37,7 @@ def calc_open_close_range(df):
 def calc_overnight_gap(df):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
-    df[f"oprange_returns"] = df["o"] / df.groupby("symbol")["c"].shift(1)
+    df[f"oprange_returns"] = df["o"] / df.groupby("symbol")["c"].shift(1) -1
     return df
 
 def calc_ma_features(df, n): #lấy df từ all_data
@@ -49,19 +49,30 @@ def calc_ma_features(df, n): #lấy df từ all_data
     df[f"close_ma{n}"] = df["c"]/ma -1
     return df
 
+def calc_ma_votality_features(df, n):
+    df = df.copy()
+    df = df.sort_values(["symbol", "t"])
+    
 def calc_ma_rolling_features(df, n):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
-    ma =df.groupby("symbol")["c"].transform(lambda  x: x.rolling(n).mean())    
-    df[f"close_ma_std{n}"] = np.std(ma)
-    return df
-  
+
+    ma = df.groupby("symbol")["c"].transform(
+        lambda x: x.rolling(n).mean()
+    )
+
+    df[f"close_ma_std{n}"] = (
+        ma.groupby(df["symbol"])
+        .transform(lambda x: x.rolling(n).std())
+        / df["c"]
+    )  
+
 def calc_votality(df,periods = [1,5,10,20,40,60]):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
     df = calc_return_features(df, periods = [1])
     for days in periods:
-        vol = df.groupby("symbol")["return1days"].transform(lambda x:
+        vol = df.groupby("symbol")[f"return{days}days"].transform(lambda x:
             x.rolling(days).std()
             )
         df[f"return{days}votality"] = vol
@@ -91,7 +102,7 @@ def get_vpct_change(df,n): #nhận df đã sort_values("t" tăng dần)
     df = df.sort_values(["symbol", "t"])
     if len(df) < n+1:
         return None
-    now = df.groupby("symbol")["v"]
+    now = df["v"]
     before = df.groupby("symbol")["v"].shift(n)  
     result = (now - before) / before
     result = result.where(before > 0)
