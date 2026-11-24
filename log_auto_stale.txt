@@ -1,0 +1,19 @@
+2026-11-23 14:22:42.687123 bắt đầu
+Traceback (most recent call last):
+  File "c:\python\vnstockpuller\auto_stale.py", line 8, in <module>
+    auto_fix_stale(symbols, tol = 0.03)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "c:\python\vnstockpuller\Datastock.py", line 455, in auto_fix_stale
+    stale, failed = find_stale(symbols, days=days, tol=tol, workers=workers)
+    ^^^^^^^^^^^^^
+TypeError: cannot unpack non-iterable NoneType object
+
+2026-11-23 14:23:16.985345 bắt đầu
+2026-11-23 14:23:22.700573 xong
+2026-11-24 10:27:03.005045 bắt đầu
+2026-11-24 10:27:11.593840 bắt đầu
+2026-11-24 10:27:15.021392 xong
+2026-11-24 16:23:15.918926 bắt đầu
+2026-11-24 16:23:20.452168 xong
+2026-11-24 17:02:20.155197 bắt đầu
+2026-11-24 17:02:24.877636 xong

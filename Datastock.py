@@ -12,7 +12,6 @@ from datetime import date, time, timedelta
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, ADXIndicator
 from ta.volatility import AverageTrueRange
-import pandas as pd
 start_date = date(2018,1,1)
 indexs = ["VNINDEX","VN30", "VN100", "UPCOMINDEX", "HNX30"]
 pd.set_option("display.max_columns", None)
@@ -58,76 +57,38 @@ def to_datetime(df):
 
 #savesqlite 
 
-def save_append(df, table, keys=("symbol", "t")):
-    # Bước 1: không có dữ liệu thì thoát
-    if df is None:
-        return 0
-    if df.empty:
-        return 0
+DB_PATH = "stock.db"
 
-    # Bước 2: kiểm tra df có đủ cột khóa
+def save_append(df, table, keys=("symbol", "t")):
+    if df is None or df.empty:
+        return 0
     for k in keys:
         if k not in df.columns:
             raise ValueError(f"{table}: df thiếu cột {k}")
 
-    df = df.copy()
+    df = df.drop_duplicates(subset=list(keys)).copy()
 
-    # Bước 3: tạo cột "_key" cho df, ví dụ "VNM|2026-10-29 00:00:00"
-    key = None
-    for k in keys:
-        if pd.api.types.is_datetime64_any_dtype(df[k]):
-            part = df[k].dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            part = df[k].astype(str)
-        if key is None:
-            key = part
-        else:
-            key = key + "|" + part
-    df["_key"] = key
+    # chuẩn hóa datetime về cùng một định dạng chuỗi
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            df[c] = df[c].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    conn = sqlite3.connect("stock.db")
-    try:
-        # Bước 4: bảng chưa tồn tại thì ghi luôn
+    with sqlite3.connect(DB_PATH) as conn:
         co_bang = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,)
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
         ).fetchone()
         if co_bang is None:
-            df = df.drop_duplicates(subset="_key")
-            df = df.drop(columns=["_key"])
-            df.to_sql(table, conn, if_exists="append", index=False)
+            df.to_sql(table, conn, index=False)
             return len(df)
 
-        # Bước 5: đọc các khóa đã có trong DB
-        col_list = ""
-        for i in range(len(keys)):
-            if i > 0:
-                col_list = col_list + ", "
-            col_list = col_list + '"' + keys[i] + '"'
-        old = pd.read_sql_query(f'SELECT {col_list} FROM "{table}"', conn)
+        cols = ", ".join(f'"{c}"' for c in df.columns)
+        marks = ", ".join("?" * len(df.columns))
+        sql = f'INSERT OR IGNORE INTO "{table}" ({cols}) VALUES ({marks})'
 
-        # Bước 6: tạo "_key" cho dữ liệu cũ theo đúng cách trên
-        old_key = None
-        for k in keys:
-            part = old[k].astype(str)
-            if old_key is None:
-                old_key = part
-            else:
-                old_key = old_key + "|" + part
-
-        # Bước 7: bỏ dòng đã có trong DB, bỏ dòng trùng ngay trong df
-        da_co = df["_key"].isin(old_key)
-        moi = df[~da_co]
-        moi = moi.drop_duplicates(subset="_key")
-        moi = moi.drop(columns=["_key"])
-
-        # Bước 8: append phần mới
-        if moi.empty:
-            return 0
-        moi.to_sql(table, conn, if_exists="append", index=False)
-        return len(moi)
-    finally:
-        conn.close()
+        rows = df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
+        before = conn.total_changes
+        conn.executemany(sql, rows)
+        return conn.total_changes - before
         
 def sqlite_append(df, table):
     if df is None or df.empty:
@@ -208,7 +169,7 @@ def cal_pb(symbol,table1 ="all_data", table2 = "fundamentals", fid = "12/2025"):
             query = f"""
             Select  data.symbol, 
                     data.t,
-                    funda.FID
+                    funda.FID,
                     data.c / funda.BVPS  as pb
             from {table1} as data
             join {table2} as funda
@@ -372,7 +333,7 @@ def get_index_info_day(index, sdate, edate): #update_daily #append
 
 def find_missing(symbol, table):
     today = date.today()
-    border = 14
+    border = 10
     with sqlite3.connect("stock.db") as conn:
         query = f"""
         select * from {table}
@@ -392,6 +353,9 @@ def find_missing(symbol, table):
     last = days.iloc[-1].date()
     if last < today:
         missing.append((last+ timedelta(days=1), today))
+    first = days.iloc[0].date()
+    if first > start_date + timedelta(days=border):
+        missing.insert(0, (start_date, first - timedelta(days=1)))
     return missing
 
 
@@ -403,16 +367,25 @@ def findmissing_all(symbols, table):
             result[symbol] = missing
     return result
 
-def auto_update_all_data(symbols, table):
-    for symbol, ranges in findmissing_all(symbols, table).items():
-        for s, e in ranges:
-            try:
-                x = get_kbs(symbol, s.strftime("%d-%m-%Y"), e.strftime("%d-%m-%Y"))
-                if not x.empty:
-                    x["symbol"] = symbol
-                    save_append(to_datetime(x), table)
-            except Exception as E:
-                print(f"{symbol}: error {E}")
+def auto_update_all_data(symbols, table, workers=4):
+    tasks = [(s, a, b) for s, rs in findmissing_all(symbols, table).items() for a, b in rs]
+
+    def job(t):
+        s, a, b = t
+        try:
+            x = get_kbs(s, a.strftime("%d-%m-%Y"), b.strftime("%d-%m-%Y"))
+            if x.empty:
+                return None
+            x["symbol"] = s
+            return to_datetime(x)
+        except Exception as e:
+            print(f"{s}: error {e}")
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        frames = [f for f in ex.map(job, tasks) if f is not None]
+    if frames:
+        print("Thêm", save_append(pd.concat(frames, ignore_index=True), table), "dòng")
+
 def auto_update_all_index_info(indexs, table):
     for index, ranges in findmissing_all(indexs, table).items():
             for s, e in ranges:
@@ -449,4 +422,49 @@ def auto_update_top_stock():
     y = topntrade(100)
     save_append(x, "top100_foreigntrade", keys = ("t", "symbol"))
     save_append(y, "top100_trade", keys = ("t","symbol"))
-    
+
+def find_stale(symbols, days=60, tol=0.005, workers=4):
+    end = date.today()
+    start = end - timedelta(days=days)
+    cutoff = pd.Timestamp(end - timedelta(days=3))   # bỏ 3 ngày gần nhất (có thể là dòng lưu dở)
+    s_str, e_str = start.strftime("%d-%m-%Y"), end.strftime("%d-%m-%Y")
+
+    # 1) Đọc DB đúng 1 lần cho tất cả mã (thay vì 1 query mỗi mã)
+    with sqlite3.connect("stock.db") as conn:
+        db_all = pd.read_sql_query(
+            "SELECT symbol, t, c AS c_db FROM all_data WHERE substr(t,1,10) >= ?",
+            conn, params=(start.strftime("%Y-%m-%d"),), parse_dates=["t"])
+    db_all["t"] = db_all["t"].dt.normalize()
+    db_by_symbol = {s: g[["t", "c_db"]] for s, g in db_all.groupby("symbol")}
+
+    # 2) Hàm chạy trong thread: chỉ gọi API + so sánh, không đụng DB
+    def check(s):
+        try:
+            src = get_kbs(s, s_str, e_str)
+        except Exception as e:
+            return s, None, str(e)
+        if src.empty or s not in db_by_symbol:
+            return s, False, None
+        src = to_datetime(src)[["t", "c"]]
+        m = src.merge(db_by_symbol[s], on="t")
+        m = m[(m["t"] < cutoff) & (m["c_db"] > 0)]
+        stale = bool(len(m) and ((m["c"] / m["c_db"] - 1).abs() > tol).any())
+        return s, stale, None
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        results = list(tqdm(ex.map(check, symbols), total=len(symbols)))
+    stale = [s for s, st, err in results if st]
+    failed = [(s, err) for s, st, err in results if st is None]
+    return stale, failed
+
+def auto_fix_stale(symbols, table="all_data", days=60, tol=0.005, workers=4):
+    stale, failed = find_stale(symbols, days=days, tol=tol, workers=workers)
+    print(f"Lệch: {len(stale)} mã | Lỗi API: {len(failed)} mã")
+
+    if stale:
+        with sqlite3.connect("stock.db") as conn:
+            conn.executemany(f'DELETE FROM "{table}" WHERE symbol = ?',
+                             [(s,) for s in stale])
+        auto_update_all_data(stale, table)
+
+    return stale, failed
+ 
