@@ -6,14 +6,6 @@ def calc_return_features(df, periods = [1,5,10,20,40,60]): #lấy df từ all_da
     for days in periods:
         df[f"return{days}day"] = df.groupby("symbol")["c"].pct_change(days,fill_method=None)
     return df
-    
-def calc_log_features(df,periods = [1,5,10,20,40,60]):
-    df = df.copy()
-    df = df.sort_values(["symbol", "t"])
-    for days in periods:
-            df[f"log_return{days}day"] = np.log(df.groupby("symbol")["c"].transform(
-            lambda x: x/ x.shift(days))).replace([np.inf, -np.inf], np.nan)
-    return df
 
 def calc_high_low_range(df):
     df = df.copy()
@@ -25,7 +17,7 @@ def calc_high_low_range(df):
 def calc_open_close_range(df):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
-    df["gap_overnight"] = (
+    df["oc_return"] = (
     (df["c"] - df["o"]) / df["o"]
 ).replace([np.inf, -np.inf], np.nan)
     return df 
@@ -34,7 +26,7 @@ def calc_overnight_gap(df):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
     overnight_gap = (df["o"] / df.groupby("symbol")["c"].shift(1)).replace([np.inf, -np.inf], np.nan)
-    df[f"oc_return"] = overnight_gap - 1
+    df[f"gap_overnight"] = overnight_gap - 1
     return df
 
 def calc_ma_features(df, n): #lấy df từ all_data

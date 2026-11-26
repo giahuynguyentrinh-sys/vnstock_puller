@@ -3,3 +3,4 @@ venv314/
 __pycache__/
 *.db
 .env
+data/data.parquet
