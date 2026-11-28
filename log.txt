@@ -63,3 +63,5 @@ KeyError: "['symbol', 'foreign_buy', 'foreign_sell', 'foreign_total'] not in ind
 2026-11-24 16:04:17.129739 xong
 2026-11-25 17:36:25.410150 bắt đầu
 2026-11-25 17:36:56.271854 xong
+2026-11-28 13:13:16.377231 bắt đầu
+2026-11-28 13:13:41.859098 xong

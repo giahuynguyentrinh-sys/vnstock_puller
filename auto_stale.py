@@ -9,3 +9,4 @@ with open("log_auto_stale.txt", "a", encoding="utf-8") as f:
         f.write(f"{datetime.now()} xong\n")
     except Exception:
         f.write(traceback.format_exc() + "\n")
+

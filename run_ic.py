@@ -1,49 +1,10 @@
-
+import duckdb
 import pandas as pd
 import numpy as np
-import os
-df = pd.read_parquet("data/data.parquet")
-
-df["t"] = pd.to_datetime(df["t"]).dt.normalize()
-
-print("Data shape:", df.shape)
-
-feature_cols = [
-    "return1day",
-    "return5day",
-    "return10day",
-    "return60day",
-    "hlrange_returns_day",
-    "oc_return",
-    "gap_overnight",
-    "close_ma5",
-    "close_ma10",
-    "close_ma200",
-    "return_ma_volatility_20day",
-    "return5volatility",
-    "return40volatility",
-    "return60volatility",
-    "atr_pct",
-    "return_volume_ratio_5day",
-    "return_volume_ratio_60day",
-    "v_pct",
-    "macd_norm",
-    "signal_norm",
-    "hist_norm",
-    "norm_ema_12_day",
-    "adx",
-    "adx_pos",
-    "adx_neg"
-]
-
-label_col = "label_5d"
-
-
-missing = [c for c in feature_cols + [label_col] if c not in df.columns]
-
-if missing:
-    raise ValueError(f"Missing columns: {missing}")
-
+pd.set_option("display.max_rows", None)      # không giới hạn số hàng
+pd.set_option("display.max_columns", None)   # không giới hạn số cột
+pd.set_option("display.width", None)         # tự lấy theo độ rộng cửa sổ terminal
+pd.set_option("display.max_colwidth", None)  # không cắt nội dung trong ô
 def calc_ic(df, feature_cols, label_col="label_5d", min_n=30):
 
     result = {}
@@ -124,95 +85,48 @@ def test_ic(df, feature_cols, label_col="label_5d",
 
     return ic, summary
 
-import duckdb
+df = pd.read_parquet("data/data.parquet")
+
+df["t"] = pd.to_datetime(df["t"]).dt.normalize()
+
+print("Data shape:", df.shape)
+
+feature_cols = [
+    "return1day",
+    "return5day",
+    "return10day",
+    "return60day",
+    "hlrange_returns_day",
+    "oc_return",
+    "gap_overnight",
+    "close_ma5",
+    "close_ma10",
+    "close_ma200",
+    "return_ma_volatility_20day",
+    "return5volatility",
+    "return40volatility",
+    "return60volatility",
+    "atr_pct",
+    "return_volume_ratio_5day",
+    "return_volume_ratio_60day",
+    "v_pct",
+    "macd_norm",
+    "signal_norm",
+    "hist_norm",
+    "norm_ema_12_day",
+    "adx",
+    "adx_pos",
+    "adx_neg"
+]
+
+label_col = "label_5d"
 
 
-def inspect_dataset(path="data/data.parquet"):
-    con = duckdb.connect()
+missing = [c for c in feature_cols + [label_col] if c not in df.columns]
 
-    # 1. Dataset summary
-    query = f"""
-        SELECT
-            COUNT(*) AS total_rows,
-            COUNT(DISTINCT t) AS trading_days,
-            COUNT(DISTINCT symbol) AS total_stocks,
-            MIN(t) AS start_date,
-            MAX(t) AS end_date,
-            COUNT(*) FILTER (
-                WHERE label_5d IS NULL
-            ) AS missing_labels
-        FROM read_parquet('{path}')
-    """
+if missing:
+    raise ValueError(f"Missing columns: {missing}")
 
-    summary = con.execute(query).df()
-
-    # 2. Rows per trading day
-    query = f"""
-        SELECT
-            t,
-            COUNT(*) AS rows
-        FROM read_parquet('{path}')
-        GROUP BY t
-        ORDER BY t
-    """
-
-    daily = con.execute(query).df()
-
-    # 3. Missing values in features
-    feature_cols = [
-        "return1day", "return5day", "return10day", "return60day",
-        "hlrange_returns_day", "oc_return", "gap_overnight",
-        "close_ma5", "close_ma10", "close_ma200",
-        "return_ma_volatility_20day", "return5volatility",
-        "return40volatility", "return60volatility", "atr_pct",
-        "return_volume_ratio_5day", "return_volume_ratio_60day",
-        "v_pct", "macd_norm", "signal_norm", "hist_norm",
-        "norm_ema_12_day", "adx", "adx_pos", "adx_neg"
-    ]
-
-    feature_sql = ",\n".join(
-        [
-            f'COUNT(*) FILTER (WHERE "{col}" IS NULL) AS "{col}"'
-            for col in feature_cols
-        ]
-    )
-
-    query = f"""
-        SELECT
-            {feature_sql}
-        FROM read_parquet('{path}')
-    """
-
-    missing = con.execute(query).df().T
-    missing.columns = ["missing_count"]
-    missing["missing_pct"] = (
-        missing["missing_count"] / summary["total_rows"].iloc[0] * 100
-    )
-
-    # 4. Print results
-    print("\n========== DATASET SUMMARY ==========")
-    print(summary.to_string(index=False))
-
-    print("\n========== ROWS PER DAY ==========")
-    print(daily["rows"].describe())
-
-    print("\n========== FEATURE MISSING VALUES ==========")
-    print(
-        missing.sort_values(
-            "missing_pct",
-            ascending=False
-        ).to_string()
-    )
-
-    con.close()
-
-    return summary, daily, missing
-
-
-if __name__ == "__main__":
-    summary, daily, missing = inspect_dataset()
-summary, daily, missing = inspect_dataset()
-"""
 ic, summary = test_ic(
     df,
     feature_cols,
@@ -220,21 +134,22 @@ ic, summary = test_ic(
     step=5,
     min_n=30
 )
+"""
+stage3
+grouped = df.groupby("t")
+grouped = grouped[feature_cols].corr(method="spearman", min_periods = 30)
+mean_df = grouped.groupby(level=1).mean()
+mean_df = mean_df.reindex(feature_cols)
+print(mean_df)
+"""
+
+"""
+stage2
+stable_cols = summary.index[summary["stable"]].tolist()   # lấy tự động, khỏi gõ tay
+
+ic_year_mean  = ic[stable_cols].groupby(ic.index.year).mean()
+ic_year_count = ic[stable_cols].groupby(ic.index.year).count()
 
 
-os.makedirs("data/ic_results", exist_ok=True)
-
-ic.to_parquet("data/ic_results/ic.parquet")
-
-summary.to_csv(
-    "data/ic_results/ic_summary.csv",
-    index=True
-)
-
-print("\n===== IC SUMMARY =====")
-print(summary.to_string())
-
-print("\nSaved:")
-print("- data/ic_results/ic.parquet")
-print("- data/ic_results/ic_summary.csv")
+print(df[stable_cols].corr(method="spearman").round(2)) 
 """

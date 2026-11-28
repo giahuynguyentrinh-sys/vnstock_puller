@@ -12,6 +12,7 @@ from datetime import date, time, timedelta
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, ADXIndicator
 from ta.volatility import AverageTrueRange
+import duckdb
 start_date = date(2018,1,1)
 indexs = ["VNINDEX","VN30", "VN100", "UPCOMINDEX", "HNX30"]
 pd.set_option("display.max_columns", None)

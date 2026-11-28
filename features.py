@@ -1,6 +1,6 @@
 from Datastock import *
 
-def calc_return_features(df, periods = [1,5,10,20,40,60]): #lấy df từ all_data
+def calc_return_features(df, periods = [10,20,40,60]): #lấy df từ all_data
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
     for days in periods:
@@ -53,14 +53,14 @@ def calc_ma_volatility_features(df, n):
     return df
 
 
-def calc_volatility(df,periods = [5,10,20,40,60]):
+def calc_volatility(df,periods = [5,10,20]):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
     df = calc_return_features(df, periods = [1])
     for days in periods:
         vol = df.groupby("symbol")[f"return1day"].transform(lambda x:
             x.rolling(days).std()
-            )
+        )
         df[f"return{days}volatility"] = vol
     return df
 
@@ -132,15 +132,15 @@ def calc_macd(df, window_fast=12, window_slow=26, window_sign=9):
             window_sign=window_sign
         )
         c = g["c"].where(g["c"] > 0)
-        macd_list.append(macd_indicator.macd() / c)
+        #macd_list.append(macd_indicator.macd() / c)
         sig_list.append(macd_indicator.macd_signal() / c)
-        hist_list.append(macd_indicator.macd_diff() / c)
-    df["macd_norm"] = pd.concat(macd_list)
+        #hist_list.append(macd_indicator.macd_diff() / c)
+    #df["macd_norm"] = pd.concat(macd_list)
     df["signal_norm"] = pd.concat(sig_list)
-    df["hist_norm"] = pd.concat(hist_list)
+    #df["hist_norm"] = pd.concat(hist_list)
     return df
 
-def calc_ema(df, periods = [12,26,50]):
+def calc_ema(df, periods = [26,50]):
     df = df.copy()
     df = df.sort_values(["symbol", "t"])
     for days in periods:
